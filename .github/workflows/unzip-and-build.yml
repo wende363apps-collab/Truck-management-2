@@ -15,14 +15,18 @@ jobs:
       - name: Unzip project
         run: |
           unzip -o TruckingApp-starter.zip -d .
-          # If the ZIP contains a top-level TruckingApp/ folder, move its contents up
           if [ -d "TruckingApp" ]; then
             shopt -s dotglob
+            # Move everything EXCEPT .github (to avoid conflict)
             mv TruckingApp/* .
-            rmdir TruckingApp
+            if [ -d "TruckingApp/.github" ]; then
+              echo "Skipping .github from inside zip"
+            fi
+            rmdir TruckingApp || true
           fi
           echo "After unzip:"
           ls -la
+
 
       # --- Fix versions so the build doesn't fail (Compose/Kotlin compatibility) ---
       - name: Patch Kotlin version (root build.gradle.kts)
