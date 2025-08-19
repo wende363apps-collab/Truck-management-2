@@ -1,0 +1,60 @@
+name: Unzip and Build APK
+on:
+  workflow_dispatch:
+
+jobs:
+  unzip_and_build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show repo contents
+        run: ls -la
+
+      - name: Unzip project
+        run: |
+          unzip -o TruckingApp-starter.zip -d .
+          # If the ZIP contains a top-level TruckingApp/ folder, move its contents up
+          if [ -d "TruckingApp" ]; then
+            shopt -s dotglob
+            mv TruckingApp/* .
+            rmdir TruckingApp
+          fi
+          echo "After unzip:"
+          ls -la
+
+      # --- Fix versions so the build doesn't fail (Compose/Kotlin compatibility) ---
+      - name: Patch Kotlin version (root build.gradle.kts)
+        run: |
+          if [ -f build.gradle.kts ]; then
+            sed -i 's/id("org.jetbrains.kotlin.android") version "2\.0\.[0-9]\+"/id("org.jetbrains.kotlin.android") version "1.9.24"/' build.gradle.kts
+          fi
+          echo "Root build.gradle.kts (first 40 lines):"
+          head -n 40 build.gradle.kts || true
+
+      - name: Verify app module gradle file
+        run: |
+          echo "app/build.gradle.kts (first 120 lines):"
+          head -n 120 app/build.gradle.kts || true
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build Debug APK
+        uses: gradle/gradle-build-action@v2
+        with:
+          gradle-version: 8.7
+          arguments: assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
