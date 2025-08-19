@@ -1,5 +1,4 @@
 name: Unzip and Build APK
-
 on:
   workflow_dispatch:
 
@@ -12,12 +11,26 @@ jobs:
 
       - name: Unzip project
         run: |
-          mkdir TruckingApp
-          unzip TruckingApp-starter.zip -d .
-          # move contents up if needed
+          unzip -o TruckingApp-starter.zip -d .
           if [ -d "TruckingApp" ]; then
+            shopt -s dotglob
+            # Move everything EXCEPT .github (to avoid conflict)
             mv TruckingApp/* .
+            if [ -d "TruckingApp/.github" ]; then
+              echo "Skipping .github from inside zip"
+            fi
+            rmdir TruckingApp || true
           fi
+          echo "After unzip:"
+          ls -la
+
+      - name: Patch Kotlin version (root build.gradle.kts)
+        run: |
+          if [ -f build.gradle.kts ]; then
+            sed -i 's/id("org.jetbrains.kotlin.android") version "2.0.20"/id("org.jetbrains.kotlin.android") version "1.9.24"/' build.gradle.kts
+          fi
+          echo "Using Kotlin version:"
+          grep 'org.jetbrains.kotlin.android' build.gradle.kts || true
 
       - name: Setup JDK
         uses: actions/setup-java@v4
