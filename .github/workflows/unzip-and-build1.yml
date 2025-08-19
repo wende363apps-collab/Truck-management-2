@@ -9,28 +9,54 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unzip project
+      - name: Show repo contents (before unzip)
+        run: ls -la
+
+      - name: Unzip project and move contents (skip .github)
+        shell: bash
         run: |
+          set -euxo pipefail
           unzip -o TruckingApp-starter.zip -d .
+          # If the ZIP has a top-level TruckingApp/ folder, move its children up,
+          # but DO NOT move .github to avoid conflicts with workflows in the repo.
           if [ -d "TruckingApp" ]; then
             shopt -s dotglob
-            # Move everything EXCEPT .github (to avoid conflict)
-            mv TruckingApp/* .
-            if [ -d "TruckingApp/.github" ]; then
-              echo "Skipping .github from inside zip"
-            fi
+            for p in TruckingApp/*; do
+              base="$(basename "$p")"
+              if [ "$base" = ".github" ]; then
+                echo "Skipping $p"
+                continue
+              fi
+              mv "$p" .
+            done
             rmdir TruckingApp || true
           fi
-          echo "After unzip:"
+          echo "After unzip / move:"
           ls -la
+          echo "Tree (top level):"
+          ls -la .
 
+      - name: Verify Gradle files exist
+        run: |
+          test -f settings.gradle.kts && echo "Found settings.gradle.kts" || (echo "Missing settings.gradle.kts" && exit 1)
+          test -f build.gradle.kts && echo "Found root build.gradle.kts" || (echo "Missing root build.gradle.kts" && exit 1)
+          test -f app/build.gradle.kts && echo "Found app/build.gradle.kts" || (echo "Missing app/build.gradle.kts" && exit 1)
+
+      - name: Show current Kotlin/Compose versions
+        run: |
+          echo "Root build.gradle.kts (plugins):"
+          grep -n 'org.jetbrains.kotlin.android' -n build.gradle.kts || true
+          echo "App composeOptions in app/build.gradle.kts:"
+          grep -n 'kotlinCompilerExtensionVersion' app/build.gradle.kts || true
+
+      # ---- Auto-fix Kotlin/Compose mismatch (downgrade Kotlin to 1.9.24) ----
       - name: Patch Kotlin version (root build.gradle.kts)
         run: |
-          if [ -f build.gradle.kts ]; then
-            sed -i 's/id("org.jetbrains.kotlin.android") version "2.0.20"/id("org.jetbrains.kotlin.android") version "1.9.24"/' build.gradle.kts
-          fi
-          echo "Using Kotlin version:"
-          grep 'org.jetbrains.kotlin.android' build.gradle.kts || true
+          set -euxo pipefail
+          # Replace ANY 2.0.x with 1.9.24
+          sed -i 's/id("org.jetbrains.kotlin.android") version "2\.0\.[0-9]\+"/id("org.jetbrains.kotlin.android") version "1.9.24"/' build.gradle.kts
+          echo "After patch:"
+          grep -n 'org.jetbrains.kotlin.android' build.gradle.kts
 
       - name: Setup JDK
         uses: actions/setup-java@v4
@@ -41,11 +67,18 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      # Optional: generate Gradle wrapper so future steps can use ./gradlew
+      - name: Generate Gradle wrapper (optional)
+        run: |
+          gradle -v
+          gradle wrapper
+          ./gradlew -v
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+
       - name: Build Debug APK
-        uses: gradle/gradle-build-action@v2
-        with:
-          gradle-version: 8.7
-          arguments: assembleDebug
+        # Prefer using the wrapper if present; fall back to the action
+        run: ./gradlew --no-daemon assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
